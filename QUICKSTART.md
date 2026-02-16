@@ -122,12 +122,31 @@ npm run test:client -- --tenant startup_free --requests 20
 
 | Tenant ID | Tier | User RPM | Tenant RPM | Notes |
 |-----------|------|----------|------------|-------|
-| `startup_free` | Free | 100 | 1,000 | Strict limits |
-| `acme_corp` | Pro | 1,000 | 10,000 | Generous limits |
-| `bigcorp_enterprise` | Enterprise | 10,000 | 100,000 | Minimal restrictions |
-| `demo_tenant` | Free | 120 | 1,200 | Demo/testing |
-| `strict_tenant` | Free | 10 | 50 | Very strict (edge case) |
+| `startup_free` | Free | 100 | 1,000 | Strict limits (5% buffer) |
+| `acme_corp` | Pro | 1,000 | 10,000 | Generous limits (10% buffer) |
+| `bigcorp_enterprise` | Enterprise | 10,000 | 100,000 | Minimal restrictions (20% buffer) |
+| `techstartup_custom` | Custom | None | 5,000 | Only tenant + endpoint limits |
+| `test_tenant_1` | Free | 60 | 600 | Basic testing |
+| `test_tenant_2` | Pro | 500 | 5,000 | Pro tier testing |
+| `demo_tenant` | Free | 120 | 1,200 | Demo/documentation examples |
+| `loadtest_tenant` | Enterprise | 50,000 | 500,000 | High-volume load testing |
+| `strict_tenant` | Free | 10 | 50 | Very strict (edge case testing) |
 | `anonymous` | Free | 30 | 300 | Unauthenticated requests |
+| `strict_no_soft` | Custom | 100 | 1,000 | No soft throttle (immediate 429) |
+| `abuse_test_tenant` | Free | 30 | 100 | Abuse detection testing |
+
+### Understanding Buffer Percentages
+
+The buffer percentage determines how much burst capacity is allowed beyond the base rate:
+
+- **5% buffer (Free tier):** `hard_threshold_pct: 105` - Strict, rejects at 105% of limit
+- **10% buffer (Pro tier):** `hard_threshold_pct: 110` - Balanced, allows 10% burst
+- **20% buffer (Enterprise):** `hard_threshold_pct: 120` - Generous, allows 20% burst
+
+**Example:** If a user has 100 RPM limit with 150 burst capacity:
+- **Soft threshold (100%):** Warnings when bucket empty, requests still allowed
+- **Hard threshold (105%):** Rejects when consumption exceeds 105 tokens
+- Result: 150 burst + 5 extra = ~155 total requests allowed in first minute
 
 ## Common Test Scenarios
 
