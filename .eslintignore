@@ -1,0 +1,21 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Load tests (k6 JavaScript files)
+tests/load/
+
+# Utility scripts (standalone executables)
+scripts/
+
+# Coverage
+coverage/
+
+# Environment files
+.env
+.env.*
+
+# Config files (JavaScript, not TypeScript)
+*.config.js

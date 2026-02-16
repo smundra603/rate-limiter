@@ -1,0 +1,35 @@
+# Prometheus Configuration for Rate Limiter
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'rate-limiter'
+    environment: 'development'
+
+# Scrape configurations
+scrape_configs:
+  # Rate Limiter Service
+  # Supports both Docker container and local development
+  - job_name: 'rate-limiter'
+    static_configs:
+      # Try Docker service name first (when running in docker-compose)
+      - targets: ['rate-limiter:8080']
+        labels:
+          environment: 'docker'
+      # Fallback to host (when running locally with npm run dev)
+      - targets: ['host.docker.internal:8080']
+        labels:
+          environment: 'local'
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+    scrape_timeout: 5s
+
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+# Alerting rules (optional - can be extended)
+rule_files:
+  # - 'alerts/*.yml'

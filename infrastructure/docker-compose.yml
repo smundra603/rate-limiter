@@ -1,0 +1,314 @@
+version: '3.8'
+
+services:
+  # ==================== Redis Cluster (HA + Sharding) ====================
+  redis-cluster-1:
+    image: redis:7-alpine
+    container_name: rate-limiter-redis-1
+    ports:
+      - "6379:6379"
+      - "16379:16379"  # Cluster bus port
+    volumes:
+      - ./redis/redis-cluster-1.conf:/usr/local/etc/redis/redis.conf
+      - redis-cluster-1-data:/data
+    command: redis-server /usr/local/etc/redis/redis.conf
+    networks:
+      - rate-limiter-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  redis-cluster-2:
+    image: redis:7-alpine
+    container_name: rate-limiter-redis-2
+    ports:
+      - "6380:6379"
+      - "16380:16379"
+    volumes:
+      - ./redis/redis-cluster-2.conf:/usr/local/etc/redis/redis.conf
+      - redis-cluster-2-data:/data
+    command: redis-server /usr/local/etc/redis/redis.conf
+    networks:
+      - rate-limiter-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  redis-cluster-3:
+    image: redis:7-alpine
+    container_name: rate-limiter-redis-3
+    ports:
+      - "6381:6379"
+      - "16381:16379"
+    volumes:
+      - ./redis/redis-cluster-3.conf:/usr/local/etc/redis/redis.conf
+      - redis-cluster-3-data:/data
+    command: redis-server /usr/local/etc/redis/redis.conf
+    networks:
+      - rate-limiter-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  redis-cluster-4:
+    image: redis:7-alpine
+    container_name: rate-limiter-redis-4
+    ports:
+      - "6382:6379"
+      - "16382:16379"
+    volumes:
+      - ./redis/redis-cluster-4.conf:/usr/local/etc/redis/redis.conf
+      - redis-cluster-4-data:/data
+    command: redis-server /usr/local/etc/redis/redis.conf
+    networks:
+      - rate-limiter-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  redis-cluster-5:
+    image: redis:7-alpine
+    container_name: rate-limiter-redis-5
+    ports:
+      - "6383:6379"
+      - "16383:16379"
+    volumes:
+      - ./redis/redis-cluster-5.conf:/usr/local/etc/redis/redis.conf
+      - redis-cluster-5-data:/data
+    command: redis-server /usr/local/etc/redis/redis.conf
+    networks:
+      - rate-limiter-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  redis-cluster-6:
+    image: redis:7-alpine
+    container_name: rate-limiter-redis-6
+    ports:
+      - "6384:6379"
+      - "16384:16379"
+    volumes:
+      - ./redis/redis-cluster-6.conf:/usr/local/etc/redis/redis.conf
+      - redis-cluster-6-data:/data
+    command: redis-server /usr/local/etc/redis/redis.conf
+    networks:
+      - rate-limiter-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # Cluster initialization (runs once on startup)
+  redis-cluster-init:
+    image: redis:7-alpine
+    container_name: rate-limiter-redis-cluster-init
+    networks:
+      - rate-limiter-network
+    depends_on:
+      redis-cluster-1:
+        condition: service_healthy
+      redis-cluster-2:
+        condition: service_healthy
+      redis-cluster-3:
+        condition: service_healthy
+      redis-cluster-4:
+        condition: service_healthy
+      redis-cluster-5:
+        condition: service_healthy
+      redis-cluster-6:
+        condition: service_healthy
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        echo 'Waiting for all Redis nodes...'
+        sleep 5
+        echo 'Creating Redis Cluster...'
+        redis-cli --cluster create \
+          rate-limiter-redis-1:6379 \
+          rate-limiter-redis-2:6379 \
+          rate-limiter-redis-3:6379 \
+          rate-limiter-redis-4:6379 \
+          rate-limiter-redis-5:6379 \
+          rate-limiter-redis-6:6379 \
+          --cluster-replicas 1 \
+          --cluster-yes
+        echo 'Cluster created successfully!'
+        redis-cli -h rate-limiter-redis-1 cluster info
+    restart: "no"
+
+  # ==================== MongoDB ====================
+  mongodb:
+    image: mongo:7
+    container_name: rate-limiter-mongodb
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_DATABASE: rate_limiter
+    volumes:
+      - ./mongodb/mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js
+      - mongodb-data:/data/db
+    networks:
+      - rate-limiter-network
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ==================== Prometheus ====================
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: rate-limiter-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=7d'
+    networks:
+      - rate-limiter-network
+    depends_on:
+      - rate-limiter
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # ==================== Grafana ====================
+  grafana:
+    image: grafana/grafana:latest
+    container_name: rate-limiter-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_INSTALL_PLUGINS=
+    volumes:
+      - ./grafana/datasources:/etc/grafana/provisioning/datasources
+      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - grafana-data:/var/lib/grafana
+    networks:
+      - rate-limiter-network
+    depends_on:
+      - prometheus
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # ==================== Rate Limiter Service ====================
+  rate-limiter:
+    build:
+      context: ..
+      dockerfile: Dockerfile.dev
+    container_name: rate-limiter-service
+    ports:
+      - "8080:8080"
+    volumes:
+      - ../src:/app/src  # Mount source for hot reload
+      - ../tests:/app/tests  # Mount tests directory
+      - ../package.json:/app/package.json
+      - ../tsconfig.json:/app/tsconfig.json
+      - ../jest.config.js:/app/jest.config.js
+    environment:
+      NODE_ENV: development
+      PORT: 8080
+      RATE_LIMIT_MODE: enforcement
+
+      # Redis Configuration (required by config layer)
+      REDIS_CLUSTER_NODES: rate-limiter-redis-1:6379,rate-limiter-redis-2:6379,rate-limiter-redis-3:6379,rate-limiter-redis-4:6379,rate-limiter-redis-5:6379,rate-limiter-redis-6:6379
+      REDIS_TIMEOUT_MS: 5000
+      REDIS_MAX_RETRIES: 3
+      REDIS_POOL_SIZE: 50
+
+      # MongoDB Configuration
+      MONGODB_URI: mongodb://mongodb:27017/rate_limiter
+      MONGODB_POOL_SIZE: 10
+      MONGODB_CONNECT_TIMEOUT_MS: 10000
+
+      # Policy Cache
+      POLICY_CACHE_TTL_MS: 60000
+      POLICY_CACHE_MAX_SIZE: 10000
+      POLICY_REFRESH_INTERVAL_MS: 30000
+
+      # Fallback
+      FALLBACK_RPM: 100
+      FALLBACK_BURST_CAPACITY: 50
+
+      # Circuit Breaker
+      CIRCUIT_BREAKER_FAILURE_THRESHOLD: 5
+      CIRCUIT_BREAKER_TIMEOUT_MS: 10000
+      CIRCUIT_BREAKER_SUCCESS_THRESHOLD: 3
+
+      # Logging
+      LOG_LEVEL: info
+      LOG_FORMAT: json
+
+      # Abuse Detection
+      ABUSE_DETECTION_ENABLED: "true"
+      ABUSE_CHECK_INTERVAL_MS: 60000
+      ABUSE_THROTTLE_THRESHOLD: 0.5
+      ABUSE_DETECTION_WINDOW_MINUTES: 1
+      ABUSE_PENALTY_DURATION_MS: 60000
+      ABUSE_PENALTY_TYPE: adaptive
+      ABUSE_PENALTY_MULTIPLIER: 0.5
+      PROMETHEUS_URL: http://prometheus:9090
+    networks:
+      - rate-limiter-network
+    depends_on:
+      redis-cluster-1:
+        condition: service_healthy
+      redis-cluster-2:
+        condition: service_healthy
+      redis-cluster-3:
+        condition: service_healthy
+      redis-cluster-4:
+        condition: service_healthy
+      redis-cluster-5:
+        condition: service_healthy
+      redis-cluster-6:
+        condition: service_healthy
+      mongodb:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 30s
+
+# ==================== Networks ====================
+networks:
+  rate-limiter-network:
+    driver: bridge
+
+# ==================== Volumes ====================
+volumes:
+  redis-cluster-1-data:
+  redis-cluster-2-data:
+  redis-cluster-3-data:
+  redis-cluster-4-data:
+  redis-cluster-5-data:
+  redis-cluster-6-data:
+  mongodb-data:
+  prometheus-data:
+  grafana-data:
